@@ -13335,44 +13335,10 @@ const App: React.FC = () => {
               <X size={18} />
             </button>
 
-            {/* Mode Switcher Tabs */}
-            <div className="px-5 pt-4 pb-2 no-print flex gap-2 border-b border-slate-100 bg-slate-50/70 shrink-0">
-              <button
-                type="button"
-                onClick={() => setPrintModalTab('receipt')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  printModalTab === 'receipt'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                إيصال الفاتورة الحرارية
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrintModalTab('tags')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  printModalTab === 'tags'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                ملصقات باركود الملابس
-              </button>
-            </div>
-
             <div className="overflow-y-auto custom-scrollbar p-5 sm:p-6 flex-1">
               <div id="print-area" className="text-center bg-white">
-                {printModalTab === 'tags' ? (
-                  /* ملصقات باركود الملابس والقطع للطابعة الحرارية */
-                  <ClothingTagsPrintView
-                    order={showPrintModal}
-                    laundryName={userProfile?.laundry_name || 'مغسلة عود ونظافة'}
-                  />
-                ) : (
-                  <>
-                    {/* ترويسة الفاتورة */}
-                    <div className="mb-2">
+                {/* ترويسة الفاتورة */}
+                <div className="mb-2">
                       <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-2 text-xl font-black shadow-sm">
                         {(userProfile?.laundry_name || 'مغسلة عود ونظافة')[0]?.toUpperCase() || 'M'}
                       </div>
@@ -13499,9 +13465,7 @@ const App: React.FC = () => {
                     تنويه هام: المغسلة غير مسؤولة عن فقدان أي أغراض شخصية تُترك داخل الملابس عند استلامها، كما لا تتحمل مسؤولية حفظ الملابس أو الأغراض بعد مضي (15) يومًا من تاريخ الاستلام.
                   </div>
                 </div>
-              </>
-            )}
-            </div>
+              </div>
 
               {/* أزرار الإجراءات داخل النافذة المنبثقة */}
               <div className="space-y-2 mt-4 no-print">
@@ -13509,7 +13473,7 @@ const App: React.FC = () => {
                   onClick={() => window.print()} 
                   className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white py-3 px-4 rounded-2xl font-black text-sm shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Printer size={18}/> {printModalTab === 'tags' ? 'طباعة ملصقات وباركود الملابس والقطع' : 'طباعة الفاتورة الحرارية'}
+                  <Printer size={18}/> طباعة الفاتورة الحرارية
                 </button>
 
                 <button 

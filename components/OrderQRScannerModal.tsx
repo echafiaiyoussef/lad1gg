@@ -142,9 +142,21 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
 
       streamRef.current = stream;
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        await videoRef.current.play();
+        const vid = videoRef.current;
+        vid.srcObject = stream;
+        vid.setAttribute('playsinline', 'true');
+        vid.setAttribute('webkit-playsinline', 'true');
+        vid.muted = true;
+        vid.onloadedmetadata = () => {
+          vid.play().catch(playErr => {
+            console.warn("video.play() inside onloadedmetadata failed:", playErr);
+          });
+        };
+        try {
+          await vid.play();
+        } catch (playErr) {
+          console.warn("video.play() immediate call failed (waiting for user interaction or metadata):", playErr);
+        }
       }
       setHasCamera(true);
     } catch (err: any) {
@@ -165,48 +177,71 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
     const raw = normalizeArabicDigits(scannedText || '').trim();
     if (!raw) return null;
 
-    // 1. Direct match with order_number or id
+    // Cleaned version without leading hash or spaces
+    const cleanRaw = raw.replace(/^#+/, '').trim();
+
+    // 1. Direct match with order_number or id (case-insensitive)
     let target = orders.find(o => 
       o.order_number === raw || 
+      o.order_number === cleanRaw ||
       o.id === raw ||
-      o.order_number.toLowerCase() === raw.toLowerCase()
+      o.id === cleanRaw ||
+      (o.order_number && o.order_number.toLowerCase() === raw.toLowerCase()) ||
+      (o.order_number && o.order_number.toLowerCase() === cleanRaw.toLowerCase())
     );
     if (target) return target;
 
-    // 2. Extract number from pattern like #1234 or رقم الفاتورة: #1234 or رقم الفاتورة: 1234
-    const invoiceNumMatch = raw.match(/(?:رقم الفاتورة|الطلب|فاتورة|Invoice|Order|ORD)[^\d#]*#?\s*([a-zA-Z0-9_\u0660-\u0669-]+)/i) ||
+    // 2. Extract number from pattern like #1234 or رقم الفاتورة: #1234 or رقم الفاتورة: 1234 or ORD-1234
+    const invoiceNumMatch = raw.match(/(?:رقم الفاتورة|الطلب|فاتورة|Invoice|Order|ORD|معرف الطلب)[^\d#]*#?\s*([a-zA-Z0-9_\u0660-\u0669-]+)/i) ||
                             raw.match(/#\s*([a-zA-Z0-9_\u0660-\u0669-]+)/);
     
     if (invoiceNumMatch && invoiceNumMatch[1]) {
       const extractedNumber = invoiceNumMatch[1].trim();
+      const cleanExtracted = extractedNumber.replace(/^#+/, '').trim();
       target = orders.find(o => 
         o.order_number === extractedNumber || 
-        o.order_number.endsWith(extractedNumber)
+        o.order_number === cleanExtracted ||
+        o.id === extractedNumber ||
+        o.id === cleanExtracted ||
+        (o.order_number && o.order_number.endsWith(cleanExtracted))
       );
       if (target) return target;
     }
 
-    // 3. Match if any order's order_number exists as a substring
-    for (const ord of orders) {
-      if (ord.order_number && raw.includes(ord.order_number)) {
-        return ord;
-      }
-    }
-
-    // 4. Match UUID
+    // 3. Match UUID pattern
     const uuidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     if (uuidMatch) {
       target = orders.find(o => o.id === uuidMatch[0]);
       if (target) return target;
     }
 
-    // 5. Fallback Supabase query if not found in current loaded orders
+    // 4. Match if any order's order_number exists as a distinct token or substring
+    for (const ord of orders) {
+      if (ord.order_number && ord.order_number.length >= 2 && (raw.includes(ord.order_number) || cleanRaw.includes(ord.order_number))) {
+        return ord;
+      }
+    }
+
+    // 5. Check if scanned text has lines (like formatted invoice QR) and inspect line by line
+    const lines = raw.split(/[\r\n]+/);
+    for (const line of lines) {
+      const cleanedLine = line.trim();
+      if (!cleanedLine) continue;
+      const lineNumMatch = cleanedLine.match(/#?\s*([a-zA-Z0-9_-]{2,})/);
+      if (lineNumMatch && lineNumMatch[1]) {
+        const potentialNum = lineNumMatch[1].replace(/^#+/, '').trim();
+        const lineTarget = orders.find(o => o.order_number === potentialNum || o.id === potentialNum);
+        if (lineTarget) return lineTarget;
+      }
+    }
+
+    // 6. Fallback Supabase query if not found in current loaded orders
     try {
-      const searchKey = invoiceNumMatch ? invoiceNumMatch[1] : raw;
+      const searchKey = invoiceNumMatch ? invoiceNumMatch[1].replace(/^#+/, '').trim() : cleanRaw;
       const { data } = await supabase
         .from('orders')
         .select('*')
-        .or(`order_number.eq.${searchKey},id.eq.${searchKey}`)
+        .or(`order_number.eq.${searchKey},id.eq.${searchKey},order_number.eq.${raw}`)
         .limit(1);
       if (data && data.length > 0) {
         return data[0] as Order;
@@ -226,9 +261,9 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
     // Check ref-based lock immediately to prevent race conditions across frames
     if (isProcessingRef.current) return;
 
-    // Check duplicate code cooldown (within 8 seconds)
+    // Check duplicate code cooldown (within 4 seconds)
     const now = Date.now();
-    if (lastScannedRef.current && lastScannedRef.current.code === raw && (now - lastScannedRef.current.timestamp < 8000)) {
+    if (lastScannedRef.current && lastScannedRef.current.code === raw && (now - lastScannedRef.current.timestamp < 4000)) {
       return;
     }
 
@@ -255,8 +290,13 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
         setCameraError(`لم يتم العثور على طلب مطابق للرمز الممسوح:\n"${raw.length > 60 ? raw.slice(0, 60) + '...' : raw}"`);
         setIsProcessing(false);
         isProcessingRef.current = false;
-        isScanningRef.current = true;
-        setIsScanning(true);
+        // Resume scanning after 1.5 seconds so user can point at correct code
+        setTimeout(() => {
+          if (!isProcessingRef.current) {
+            isScanningRef.current = true;
+            setIsScanning(true);
+          }
+        }, 1500);
         return;
       }
 
@@ -343,9 +383,22 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
 
           try {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-              inversionAttempts: 'dontInvert'
+            let code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: 'attemptBoth'
             });
+
+            // If full frame did not catch it (e.g. wide aspect ratio or small QR on paper), try center crop
+            if (!code || !code.data) {
+              const cropSize = Math.floor(Math.min(canvas.width, canvas.height) * 0.75);
+              const startX = Math.floor((canvas.width - cropSize) / 2);
+              const startY = Math.floor((canvas.height - cropSize) / 2);
+              if (cropSize > 50) {
+                const croppedData = ctx.getImageData(startX, startY, cropSize, cropSize);
+                code = jsQR(croppedData.data, croppedData.width, croppedData.height, {
+                  inversionAttempts: 'attemptBoth'
+                });
+              }
+            }
 
             if (code && code.data && code.data.trim()) {
               if (!isProcessingRef.current) {
@@ -588,6 +641,7 @@ export const OrderQRScannerModal: React.FC<OrderQRScannerModalProps> = ({
                   autoPlay
                   playsInline
                   muted
+                  disablePictureInPicture
                 />
 
                 {/* Optical Scanning Overlay */}

@@ -9,16 +9,8 @@ interface InvoiceQRCodeProps {
   className?: string;
 }
 
-export const generateInvoiceQRData = (order: Order, laundryName: string): string => {
-  return [
-    `مغسلة: ${laundryName || 'مغسلة عود ونظافة'}`,
-    `رقم الفاتورة: #${order.order_number}`,
-    `معرف الطلب: ${order.id}`,
-    `التاريخ: ${new Date(order.created_at).toLocaleString('ar-SA-u-nu-latn')}`,
-    `العميل: ${order.customer_name} (${order.customer_phone})`,
-    `المجموع: ${order.total.toFixed(2)} ر.س`,
-    `حالة السداد: ${order.is_paid ? 'مدفوعة' : 'معلقة / غير مسددة'}`
-  ].join('\n');
+export const generateInvoiceQRData = (order: Order, _laundryName?: string): string => {
+  return String(order.order_number || '').trim();
 };
 
 export const getInvoiceQRDataUrl = async (order: Order, laundryName: string, size = 160): Promise<string> => {
